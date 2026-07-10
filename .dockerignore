@@ -1,0 +1,7 @@
+.git
+.github
+**/node_modules
+**/.wrangler
+**/generated-html.js
+**/*.log
+.DS_Store

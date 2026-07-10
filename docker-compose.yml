@@ -1,0 +1,22 @@
+services:
+  drawio-mcp:
+    build:
+      context: .
+      dockerfile: mcp-app-server/Dockerfile
+    image: drawio-mcp-app:local
+    restart: unless-stopped
+    environment:
+      PORT: ${PORT:-3001}
+      LISTEN: 0.0.0.0
+      DOMAIN: ${DOMAIN:-}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-}
+      DIAGRAM_STORE_PATH: /data/diagrams.json
+      DIAGRAM_STORE_MAX: ${DIAGRAM_STORE_MAX:-200}
+      DIAGRAM_STORE_TTL_MS: ${DIAGRAM_STORE_TTL_MS:-604800000}
+    ports:
+      - "${PORT:-3001}:${PORT:-3001}"
+    volumes:
+      - drawio-mcp-data:/data
+
+volumes:
+  drawio-mcp-data:

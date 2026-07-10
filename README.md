@@ -11,9 +11,9 @@ This repository offers four approaches for integrating draw.io with AI assistant
 | **How it works** | Renders diagrams inline in chat | Opens diagrams in your browser | Generates `.drawio` files, optional PNG/SVG/PDF export or browser URL | Claude generates draw.io URLs via Python |
 | **Diagram output** | Interactive viewer embedded in conversation | draw.io editor in a new tab | `.drawio`, `.drawio.png` / `.svg` / `.pdf`, or browser URL | Clickable link to draw.io |
 | **Requires installation** | No (hosted at `mcp.draw.io`) | Yes (npm package) | One-line plugin install (draw.io Desktop only for PNG/SVG/PDF export) | No — just paste instructions |
-| **Supports XML, CSV, Mermaid** | XML only | ✅ All three | XML only (native format) | ✅ All three |
+| **Supports XML, CSV, Mermaid** | XML and Mermaid | ✅ All three | XML only (native format) | ✅ All three |
 | **Editable in draw.io** | Via "Open in draw.io" button | ✅ Directly | ✅ Directly | Via link |
-| **Works with** | Claude.ai, VS Code, Cursor, any MCP Apps host | Claude Desktop, Cursor, any MCP client | Claude Code | Claude.ai (with Projects) |
+| **Works with** | ChatGPT, Claude.ai, Cursor, and other MCP Apps hosts | Claude Desktop, Cursor, any MCP client | Claude Code | Claude.ai (with Projects) |
 | **Best for** | Inline previews in chat | Local desktop workflows | Local development workflows | Quick setup, no install needed |
 
 ---
@@ -24,17 +24,20 @@ The MCP App server renders draw.io diagrams **inline** in AI chat interfaces usi
 
 The official hosted endpoint is available at:
 
-```
+```text
 https://mcp.draw.io/mcp
 ```
 
-Add this URL as a remote MCP server in Claude.ai, Cursor, or any MCP Apps-compatible host — no installation required. In Cursor (≥ 2.6), diagrams render inline in the Agent chat ([one-click install](https://cursor.com/en/install-mcp?name=drawio&config=eyJ1cmwiOiJodHRwczovL21jcC5kcmF3LmlvL21jcCJ9)); on older builds, use the stdio [`@drawio/mcp`](mcp-tool-server/README.md) tool server instead.
+Add this URL as a remote MCP server in ChatGPT, Claude.ai, Cursor, or any MCP Apps-compatible host — no installation required. In Cursor (≥ 2.6), diagrams render inline in the Agent chat ([one-click install](https://cursor.com/en/install-mcp?name=drawio&config=eyJ1cmwiOiJodHRwczovL21jcC5kcmF3LmlvL21jcCJ9)); on older builds, use the stdio [`@drawio/mcp`](mcp-tool-server/README.md) tool server instead.
 
-You can also run the server locally via Node.js or deploy your own instance to Cloudflare Workers.
+You can also run the server locally via Node.js, Docker, Docker Compose, or deploy your own instance to Cloudflare Workers.
 
 **Tools:**
-- **`create_diagram`** — Renders draw.io XML as an interactive diagram inline in chat
+
+- **`create_diagram`** — Renders draw.io XML or Mermaid syntax as an interactive diagram inline in chat
 - **`search_shapes`** — Searches 10,000+ shapes across all draw.io libraries (AWS, Azure, GCP, P&ID, electrical, Cisco, Kubernetes, UML, BPMN, etc.) by keyword. Returns exact style strings that can be used directly in XML. Use this to find the correct shape before calling `create_diagram`.
+
+**ChatGPT:** ChatGPT supports the MCP Apps standard, including `_meta.ui.resourceUri` and the `ui/*` iframe bridge. See the [ChatGPT setup guide](docs/chatgpt.md) for developer-mode connection and self-hosting instructions.
 
 **[Full documentation →](mcp-app-server/README.md)**
 
@@ -60,7 +63,7 @@ A Claude Code plugin (under [`plugins/claude-code/`](plugins/claude-code/README.
 
 Install from this repo's marketplace inside Claude Code:
 
-```
+```text
 /plugin marketplace add jgraph/drawio-mcp
 /plugin install drawio@drawio
 ```
@@ -68,6 +71,7 @@ Install from this repo's marketplace inside Claude Code:
 Or load it directly from a local clone with `claude --plugin-dir ./plugins/claude-code`.
 
 By default, the plugin writes a `.drawio` file and opens it in draw.io. Mention a format in your request to change the output:
+
 - `/drawio:drawio png ...` / `svg` / `pdf` — exports using the draw.io desktop CLI with `--embed-diagram`
 - `/drawio:drawio url ...` — compresses the XML with Node.js's built-in `zlib` and opens the result at `app.diagrams.net`. No draw.io Desktop needed; the `.drawio` file is kept locally as a persistent copy.
 
@@ -98,57 +102,63 @@ Two optional, independent layout passes can run after the AI generates a diagram
 
 ---
 
+## Docker Quick Start
+
+From the repository root:
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+```
+
+The local endpoint is:
+
+```text
+http://localhost:3001/mcp
+```
+
+Build the image directly with the repository root as the context:
+
+```bash
+docker build -f mcp-app-server/Dockerfile -t drawio-mcp-app .
+```
+
+---
+
 ## Data Residency & Offline Use
 
-If you're deploying in an environment with strict data restrictions, here is exactly
-where diagram data goes for each approach.
+If you're deploying in an environment with strict data restrictions, here is exactly where diagram data goes for each approach.
 
-**No component sends your diagram to a cloud rasterizer.** `convert.diagrams.net` (or
-any cloud export endpoint) is not called anywhere in this repository, and there is no
-"local dependency missing → fall back to cloud" path. PNG/SVG/PDF export happens only
-in the Claude Code Plugin, which shells out to your **locally installed draw.io Desktop CLI**
-(located via `which drawio`); if it isn't installed, the `.drawio` file is kept and
-nothing is sent.
+**No component sends your diagram to a cloud rasterizer.** `convert.diagrams.net` (or any cloud export endpoint) is not called anywhere in this repository, and there is no "local dependency missing → fall back to cloud" path. PNG/SVG/PDF export happens only in the Claude Code Plugin, which shells out to your **locally installed draw.io Desktop CLI** (located via `which drawio`); if it isn't installed, the `.drawio` file is kept and nothing is sent.
 
 ### Does your diagram leave the machine?
 
 | Approach | Diagram leaves the machine? |
 |---|---|
 | **MCP App Server — hosted (`mcp.draw.io`)** | **Yes** — it is sent to the draw.io server as the MCP request. Self-host instead (below) to keep it local. |
-| **MCP App Server — self-hosted** (local Node or your own Cloudflare) | No — processed by your server and embedded in HTML that renders client-side. |
+| **MCP App Server — self-hosted** (local Node, Docker, or your own Cloudflare deployment) | No — processed by your server and embedded in HTML that renders client-side. |
 | **MCP Tool Server** (`@drawio/mcp`) | No — carried in the URL `#fragment`, which browsers do not transmit to the server. |
 | **Claude Code Plugin** | No — written locally and exported by your local draw.io Desktop CLI. |
 
-By default the servers do not write diagram content to their logs — only request
-metadata (method, session, status, timing). The Cloudflare-hosted App Server logs
-response bodies only when run with `DEBUG=true`.
+By default the servers do not write diagram content to their logs — only request metadata (method, session, status, timing). The Cloudflare-hosted App Server logs response bodies only when run with `DEBUG=true`.
 
 ### Reducing external requests
 
-Even when the diagram itself stays local, the rendering loads draw.io's web-app /
-viewer **code** from `app.diagrams.net` and `viewer.diagrams.net` by default. These
-fetch application code and assets — not your diagram — but they are still outbound
-requests. To reduce or remove them:
+Even when the diagram itself stays local, the rendering loads draw.io's web-app / viewer **code** from `app.diagrams.net` and `viewer.diagrams.net` by default. These fetch application code and assets — not your diagram — but they are still outbound requests. To reduce or remove them:
 
-- **App Server:** build with the `VIEWER_PATH` environment variable to inline the
-  viewer instead of loading it from `viewer.diagrams.net`.
-- **Tool Server:** set the `DRAWIO_BASE_URL` environment variable to a self-hosted
-  draw.io instance.
-- **Claude Code Plugin:** the opt-in `/drawio:drawio url` mode opens the diagram at
-  `app.diagrams.net` (hardcoded — no `DRAWIO_BASE_URL` equivalent). Use the default
-  `.drawio` output or local Desktop export instead if you need to avoid that request.
+- **App Server:** build with the `VIEWER_PATH` environment variable to inline the viewer instead of loading it from `viewer.diagrams.net`.
+- **Tool Server:** set the `DRAWIO_BASE_URL` environment variable to a self-hosted draw.io instance.
+- **Claude Code Plugin:** the opt-in `/drawio:drawio url` mode opens the diagram at `app.diagrams.net` (hardcoded — no `DRAWIO_BASE_URL` equivalent). Use the default `.drawio` output or local Desktop export instead if you need to avoid that request.
 
 ### Your LLM is a separate consideration
 
-The diagram is *generated* by the LLM. If you use a hosted model, the diagram content
-is produced in that provider's cloud regardless of where this MCP server runs.
+The diagram is *generated* by the LLM. If you use a hosted model, the diagram content is produced in that provider's cloud regardless of where this MCP server runs.
+
 End-to-end isolation requires a locally hosted model as well.
 
 ### Verifying
 
-The only reliable way to confirm a deployment makes **no** outbound calls is to run it
-with network egress blocked (or watch the browser's Network tab) and verify it still
-renders. We recommend this for any strict-isolation deployment.
+The only reliable way to confirm a deployment makes **no** outbound calls is to run it with network egress blocked (or watch the browser's Network tab) and verify it still renders. We recommend this for any strict-isolation deployment.
 
 ---
 
@@ -177,7 +187,7 @@ The `search_shapes` tool is powered by a pre-built index of all draw.io shapes. 
 
 `shape-search/search-index.json` is committed to the repository and is **automatically refreshed on every draw.io release** via the [Update Shape Search Index](.github/workflows/update-search-index.yml) GitHub Action — no manual step is required to stay in sync with the latest shapes.
 
-To regenerate the index manually (e.g. when iterating on the generator itself):
+To regenerate the index manually (for example, when iterating on the generator itself):
 
 ```bash
 cd shape-search
@@ -216,3 +226,4 @@ npm start
 - [Mermaid.js Documentation](https://mermaid.js.org/intro/)
 - [MCP Specification](https://modelcontextprotocol.io/)
 - [MCP Apps Extension](https://modelcontextprotocol.io/docs/extensions/apps)
+- [OpenAI Apps SDK](https://developers.openai.com/apps-sdk)
