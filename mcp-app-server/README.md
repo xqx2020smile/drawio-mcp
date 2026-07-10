@@ -4,7 +4,7 @@ The MCP App server renders draw.io diagrams **inline** in AI chat interfaces usi
 
 ## How It Works
 
-1. The LLM calls the `create_diagram` tool with draw.io XML
+1. The LLM calls the `create_diagram` tool with draw.io XML or Mermaid syntax
 2. The host fetches the UI resource and renders it in a sandboxed iframe
 3. The diagram is rendered using the official [draw.io viewer](https://viewer.diagrams.net)
 4. The user sees an interactive diagram inline with zoom, pan, and layers support
@@ -21,6 +21,7 @@ The MCP App server renders draw.io diagrams **inline** in AI chat interfaces usi
 Provide exactly one of `xml` or `mermaid` as a plain string — not an object or array.
 
 The rendered diagram includes:
+
 - Interactive zoom, pan, and navigation
 - Layer toggling and lightbox mode
 - "Open in draw.io" button to edit the diagram in the full editor
@@ -30,17 +31,33 @@ The rendered diagram includes:
 
 The official draw.io MCP App server is hosted at:
 
-```
+```text
 https://mcp.draw.io/mcp
 ```
 
-Add this URL as a remote MCP server in Claude.ai, Cursor, or any MCP Apps-compatible host — no installation or setup required.
+Add this URL as a remote MCP server in ChatGPT, Claude.ai, Cursor, or another MCP Apps-compatible host — no installation or setup required.
 
-> **Note:** This server renders diagrams **inline** via the [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps) protocol, so it requires an MCP Apps–capable host (e.g. Claude.ai or Cursor). In hosts that don't support MCP Apps — such as **VS Code / GitHub Copilot** or Claude Code — the tool connects but has nothing to render, so the diagram won't appear. For those clients use the stdio [`@drawio/mcp`](../mcp-tool-server) tool server instead, which opens diagrams in the browser. ChatGPT isn't supported yet: its connectors are remote-only and use OpenAI's own widget format rather than MCP Apps, so the diagram won't render inline — and unlike the editors above, the stdio fallback can't be used.
+> **Compatibility:** ChatGPT supports the MCP Apps standard, including `_meta.ui.resourceUri` and the standard `ui/*` iframe bridge. VS Code / GitHub Copilot and Claude Code do not currently provide the same inline MCP Apps surface; for those clients use the stdio [`@drawio/mcp`](../mcp-tool-server) tool server instead, which opens diagrams in the browser.
+
+### Using with ChatGPT
+
+ChatGPT can render this MCP App inline. For self-hosted development, the MCP endpoint must be reachable over HTTPS.
+
+1. Enable **Developer mode** under **Settings → Security and login**.
+2. Open **Settings → Plugins** and create a developer-mode app.
+3. Set the MCP server URL to the hosted endpoint or your own public `/mcp` URL.
+4. Start a new conversation, enable the app, and ask ChatGPT to create a diagram.
+
+See the complete [ChatGPT setup guide](../docs/chatgpt.md).
+
+OpenAI references:
+
+- [MCP Apps compatibility in ChatGPT](https://developers.openai.com/apps-sdk/mcp-apps-in-chatgpt)
+- [Connect from ChatGPT](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt)
 
 ### Using with Cursor
 
-Cursor supports the MCP Apps extension (Cursor **≥ 2.6**), so diagrams render inline in the Agent chat. On older builds the server still connects, but there's nothing to render inline; use the stdio [`@drawio/mcp`](../mcp-tool-server) tool server instead, which opens diagrams in the browser.
+Cursor supports the MCP Apps extension (Cursor **≥ 2.6**), so diagrams render inline in the Agent chat. On older builds the server still connects, but there is nothing to render inline; use the stdio [`@drawio/mcp`](../mcp-tool-server) tool server instead, which opens diagrams in the browser.
 
 [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=drawio&config=eyJ1cmwiOiJodHRwczovL21jcC5kcmF3LmlvL21jcCJ9)
 
@@ -60,7 +77,36 @@ Enable the server when prompted (or under **Cursor Settings → MCP**), then ask
 
 ## Self-Hosting
 
-If you prefer to run your own instance, you can use Node.js or deploy to Cloudflare Workers.
+You can run your own instance with Node.js, Docker, or Cloudflare Workers.
+
+### Docker Compose
+
+Run from the repository root:
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+```
+
+The MCP endpoint is available locally at:
+
+```text
+http://localhost:3001/mcp
+```
+
+The Dockerfile expects the repository root as its build context because the App Server reads shared references and the shape index from sibling directories.
+
+### Docker
+
+```bash
+docker build -f mcp-app-server/Dockerfile -t drawio-mcp-app .
+docker run --rm -p 3001:3001 \
+  -e LISTEN=0.0.0.0 \
+  -e PORT=3001 \
+  drawio-mcp-app
+```
+
+For a permanent HTTPS deployment, set `DOMAIN` to the public origin and optionally restrict accepted Host headers with `ALLOWED_HOSTS`.
 
 ### Installation
 
@@ -69,25 +115,25 @@ cd mcp-app-server
 npm install
 ```
 
-### Running (Node.js)
+### Running with Node.js
 
-Start the HTTP server (for Claude.ai and other web-based hosts):
+Start the HTTP server:
 
 ```bash
 npm start
 ```
 
-The server listens on `http://localhost:3001/mcp` by default. Set the `PORT` environment variable to change the port.
+The server listens on `http://localhost:3001/mcp` by default. Set the `PORT` environment variable to change the port. Set `LISTEN=0.0.0.0` when the process must accept connections outside localhost.
 
-### Connecting to Claude.ai
+### Exposing a local server
 
-Since Claude.ai needs a public URL, use a tunnel:
+ChatGPT, Claude.ai, and other web clients need a public HTTPS URL. A Cloudflare Tunnel can expose the local service:
 
 ```bash
 npx cloudflared tunnel --url http://localhost:3001
 ```
 
-Then add the tunnel URL (with `/mcp` appended) as a custom connector in Claude.ai settings.
+Add `/mcp` to the generated HTTPS URL when configuring the app.
 
 ### Using with Claude Desktop (stdio)
 
@@ -141,16 +187,28 @@ This starts a local Workers dev server at `http://localhost:8787/mcp`.
 | **HTML build** | Reads bundles from `node_modules` at startup | Pre-built at deploy time via `src/build-html.js` → `src/generated-html.js` |
 | **Schema validation** | Default (Zod-based) | Default (Zod-based) |
 
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | `3001` | HTTP listening port. |
+| `LISTEN` | `127.0.0.1` | Informational listening host used in logs. Use `0.0.0.0` for containers. |
+| `DOMAIN` | unset | Public widget origin included in MCP Apps metadata. |
+| `ALLOWED_HOSTS` | unset | Optional comma-separated Host header allowlist. |
+| `VIEWER_PATH` | unset | Local draw.io viewer bundle or directory for reduced external requests. |
+| `ELK_PATH` | unset | Local drawio-elk bundle. |
+| `MERMAID_PATH` | unset | Local drawio-mermaid bundle. |
+
 ## Architecture
 
 ### File layout
 
-```
+```text
 src/
   shared.js          Shared logic: buildHtml(), processAppBundle(), createServer()
   index.js           Node.js entry (Express + stdio transports)
   worker.js          Cloudflare Workers entry (Web Standard fetch handler)
-  build-html.js      Build script: generates generated-html.js + xml reference
+  build-html.js      Build script: generates generated-html.js + XML reference
   generated-html.js  (gitignored) Pre-built HTML string + XML reference for the Worker
 wrangler.toml        Wrangler configuration
 ../shared/
@@ -172,6 +230,6 @@ For **Node.js**, this happens at startup (bundles read from `node_modules` via `
 
 ### Key constraints
 
-- The MCP Apps sandbox uses `sandbox="allow-scripts"` but **not** `allow-same-origin`, so Blob URL module imports fail silently. That's why the ESM export statement is stripped and a plain `var` alias is created.
-- `app.openLink()` must be used instead of `<a target="_blank">` since the sandbox doesn't have `allow-popups`.
+- The MCP Apps sandbox uses `sandbox="allow-scripts"` but **not** `allow-same-origin`, so Blob URL module imports fail silently. That is why the ESM export statement is stripped and a plain `var` alias is created.
+- `app.openLink()` must be used instead of `<a target="_blank">` because the sandbox does not have `allow-popups`.
 - `GraphViewer.processElements()` requires the container to have a nonzero `offsetWidth`, hence the `min-width: 200px` on `#diagram-container`.
