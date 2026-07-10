@@ -1,0 +1,34 @@
+name: Docker build
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/docker-build.yml"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "mcp-app-server/**"
+      - "shared/**"
+      - "shape-search/search-index.json"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/docker-build.yml"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "mcp-app-server/**"
+      - "shared/**"
+      - "shape-search/search-index.json"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build MCP App image
+        run: docker build -f mcp-app-server/Dockerfile -t drawio-mcp-app:test .
