@@ -432,17 +432,14 @@ Set `placeholders="1"` on the `<object>` to enable `%propertyName%` substitution
 - Tags, metadata, and placeholders can all be combined on the same `<object>` element
 - Use metadata when shapes represent data records (servers, services, components) and you want to attach structured information beyond the visible label
 
-## Dark mode colors
+## 固定浅色模式
 
-draw.io supports automatic dark mode rendering. How colors behave depends on the property:
+本 MCP App 始终以浅色模式渲染图表。生成 XML 时遵守以下规则：
 
-- **`strokeColor`, `fillColor`, `fontColor`** default to `"default"`, which renders as black in light theme and white in dark theme. When no explicit color is set, colors adapt automatically.
-- **Explicit colors** (e.g. `fillColor=#DAE8FC`) specify the light-mode color. The dark-mode color is computed automatically by inverting the RGB values (blending toward the inverse at 93%) and rotating the hue by 180° (via `mxUtils.getInverseColor`).
-- **`light-dark()` function** — To specify both colors explicitly, use `light-dark(lightColor,darkColor)` in the style string, e.g. `fontColor=light-dark(#7EA6E0,#FF0000)`. The first argument is used in light mode, the second in dark mode.
-
-To enable dark mode color adaptation, the `mxGraphModel` element must include `adaptiveColors="auto"`.
-
-When generating diagrams, you generally do not need to specify dark-mode colors — the automatic inversion handles most cases. Use `light-dark()` only when the automatic inverse color is unsatisfactory.
+- 在 `mxGraphModel` 上设置 `adaptiveColors="none"`，不要使用 `auto`、`simple` 或 `default`。
+- 在 `mxGraphModel` 上设置 `background="#ffffff"`，确保画布为纯白色。
+- 为 `strokeColor`、`fillColor` 和 `fontColor` 使用明确的浅色值，不要使用 `light-dark()`。
+- 不要根据宿主应用或操作系统的深色模式反转颜色。
 
 ## Edge routing & layout passes
 

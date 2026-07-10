@@ -114,15 +114,14 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
       * { margin: 0; padding: 0; box-sizing: border-box; }
 
       html {
-        color-scheme: light dark;
+        color-scheme: light;
+        background: #ffffff;
         overflow: hidden;
       }
 
       :root {
-        /* Card background + border (subtle on either theme). The
-           values are picked to feel like a quiet "page within the
-           page", not to compete with the chat surface. */
-        --viewer-card-bg: #f8f8f7;
+        color-scheme: light;
+        --viewer-card-bg: #ffffff;
         --viewer-card-border: rgba(0, 0, 0, 0.08);
         --viewer-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
         --viewer-btn-fg: #1a1a1a;
@@ -130,22 +129,10 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
         --viewer-btn-border-hover: rgba(0, 0, 0, 0.28);
         --viewer-btn-bg-hover: rgba(0, 0, 0, 0.06);
       }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --viewer-card-bg: #1f1f1f;
-          --viewer-card-border: rgba(255, 255, 255, 0.08);
-          --viewer-card-shadow: none;
-          /* Toolbar text/border in dark mode — the host doesn't always
-             set --color-text-primary, so the previous fallback (#1a1a1a
-             on a dark page) made the buttons nearly invisible. */
-          --viewer-btn-fg: #e6e6e6;
-          --viewer-btn-border: rgba(255, 255, 255, 0.18);
-          --viewer-btn-border-hover: rgba(255, 255, 255, 0.32);
-          --viewer-btn-bg-hover: rgba(255, 255, 255, 0.08);
-        }
-      }
       body {
         font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+        background: #ffffff;
+        color: #1a1a1a;
         overflow: hidden;
         /* Small page margin so the card has breathing room from the
            iframe edge. notifySize() reports document.documentElement
@@ -160,13 +147,13 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
         justify-content: center;
         padding: 24px;
         font-size: 14px;
-        color: var(--color-text-secondary, #666);
+        color: #666666;
       }
 
       .spinner {
         width: 20px; height: 20px;
-        border: 2px solid var(--color-border, #e0e0e0);
-        border-top-color: var(--color-text-primary, #1a1a1a);
+        border: 2px solid #e0e0e0;
+        border-top-color: #1a1a1a;
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
         margin-right: 8px;
@@ -270,7 +257,8 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
       }
       #diagram-container .mxgraph {
         width: 100% !important;
-        color-scheme: light dark !important;
+        color-scheme: light !important;
+        background: #ffffff !important;
       }
       #diagram-container .mxgraph > svg,
       #diagram-container .mxgraph svg {
@@ -312,8 +300,8 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
         height: 30px;
         font-size: 12px;
         font-family: inherit;
-        color: var(--color-text-primary, var(--viewer-btn-fg));
-        border: 1px solid var(--color-border, var(--viewer-btn-border));
+        color: var(--viewer-btn-fg);
+        border: 1px solid var(--viewer-btn-border);
         border-radius: 6px;
         background: transparent;
         cursor: pointer;
@@ -321,8 +309,8 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
                     color 0.15s ease, transform 0.08s ease;
       }
       #toolbar button:hover {
-        background: var(--color-bg-hover, var(--viewer-btn-bg-hover));
-        border-color: var(--color-border-hover, var(--viewer-btn-border-hover));
+        background: var(--viewer-btn-bg-hover);
+        border-color: var(--viewer-btn-border-hover);
       }
       #toolbar button:active { transform: translateY(1px); }
       #toolbar button.icon-only {
@@ -360,10 +348,10 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
         word-break: break-word;
         overflow-y: auto;
         max-height: 500px;
-        background: var(--color-bg-secondary, #f5f5f5);
+        background: #f5f5f5;
         border-radius: 8px;
         margin: 8px;
-        color: var(--color-text-primary, #1a1a1a);
+        color: #1a1a1a;
       }
     </style>
     <script>
@@ -885,6 +873,30 @@ function hashString32(s)
     h = (h * 0x01000193) >>> 0;
   }
   return ('00000000' + h.toString(16)).slice(-8);
+}
+
+function enforceLightDiagramXml(xml)
+{
+  if (xml == null || typeof xml !== 'string') return xml;
+  if (typeof mxUtils === 'undefined' || typeof mxUtils.parseXml !== 'function') return xml;
+
+  try
+  {
+    var doc = mxUtils.parseXml(xml);
+    var models = doc.getElementsByTagName('mxGraphModel');
+
+    for (var i = 0; i < models.length; i++)
+    {
+      models[i].setAttribute('adaptiveColors', 'none');
+      models[i].setAttribute('background', '#ffffff');
+    }
+
+    return mxUtils.getXml(doc.documentElement);
+  }
+  catch (e)
+  {
+    return xml;
+  }
 }
 
 /**
@@ -1489,6 +1501,7 @@ function commitDiagramXml(xml)
     }
   }
 
+  out = enforceLightDiagramXml(out);
   currentXml = out;
   drawioEditUrl = generateDrawioEditUrl(out);
 }
@@ -1504,7 +1517,7 @@ function serializeGraphXml(graph)
   {
     var codec = new mxCodec();
     var node = codec.encode(graph.getModel());
-    return mxUtils.getXml(node);
+    return enforceLightDiagramXml(mxUtils.getXml(node));
   }
   catch (e)
   {
@@ -4247,6 +4260,7 @@ var lastFinalizedKey = null;
 function finalizeStreamingView(xml, opts)
 {
   opts = opts || {};
+  xml = enforceLightDiagramXml(xml);
 
   var key = (xml || '') + '|' + (opts.postLayout || '') + '|' + (opts.routing || '') + '|' + (opts.replaceMode ? 'r' : '');
   if (key === lastFinalizedKey)
