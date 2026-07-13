@@ -9,10 +9,10 @@ const html = buildHtml("/* app */", "/* pako */", "/* mermaid */", {
 });
 
 
-test("MCP App 始终使用纯白浅色界面", function ()
+test("MCP App 默认使用纯白浅色界面", function ()
 {
+  assert.match(html, /<html[^>]*class="fixed-light"/);
   assert.match(html, /color-scheme:\s*light;/);
-  assert.doesNotMatch(html, /color-scheme:\s*light dark/);
   assert.doesNotMatch(html, /@media\s*\(prefers-color-scheme:\s*dark\)/);
   assert.match(html, /html\s*\{[^}]*background:\s*#ffffff;/s);
   assert.match(html, /body\s*\{[^}]*background:\s*#ffffff;/s);
@@ -21,12 +21,15 @@ test("MCP App 始终使用纯白浅色界面", function ()
     html,
     /#diagram-container \.mxgraph\s*\{[^}]*color-scheme:\s*light !important;[^}]*background:\s*#ffffff !important;/s,
   );
+  assert.match(html, /html\.adaptive\s*\{[^}]*color-scheme:\s*light dark;/s);
+  assert.match(html, /html\.fixed-dark\s*\{[^}]*color-scheme:\s*dark;/s);
 });
 
 
-test("渲染前关闭 Draw.io 自动颜色转换并固定画布为白色", function ()
+test("XML 和 Mermaid 的流式与最终渲染共用颜色清洗器", function ()
 {
-  assert.match(html, /setAttribute\('adaptiveColors', 'none'\)/);
-  assert.match(html, /setAttribute\('background', '#ffffff'\)/);
-  assert.match(html, /xml = enforceLightDiagramXml\(xml\);/);
+  assert.match(html, /function normalizeColorModeWithDom/);
+  assert.match(html, /healedXml = normalizeViewerDiagramXml\(healedXml, activeColorMode, activeSolidFill\)/);
+  assert.match(html, /xml = normalizeViewerDiagramXml\(xml, activeColorMode, activeSolidFill\)/);
+  assert.match(html, /applyViewerColorMode\(opts\.colorMode \|\| activeColorMode, opts\.solidFill === true\)/);
 });

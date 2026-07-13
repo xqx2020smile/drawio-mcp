@@ -97,6 +97,8 @@ export class MemoryDiagramStore
           id: entry.id,
           name: entry.name || null,
           format: entry.format,
+          colorMode: entry.colorMode || "fixed-light",
+          solidFill: entry.solidFill === true,
           version: entry.version,
           createdAt: entry.createdAt,
           updatedAt: entry.updatedAt,

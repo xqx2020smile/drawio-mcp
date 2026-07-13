@@ -6,6 +6,11 @@ import {
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { normalizeDiagramXml, INVALID_DIAGRAM_XML_MESSAGE } from "./normalize-diagram-xml.js";
+import {
+  DEFAULT_COLOR_MODE,
+  normalizeColorMode,
+  normalizeColorModeWithDom,
+} from "./normalize-color-mode.js";
 import { buildTagMap, searchShapes } from "../../shared/shape-search.js";
 
 /**
@@ -104,7 +109,7 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
       }).join('\n');
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="fixed-light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
@@ -129,6 +134,20 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
         --viewer-btn-border-hover: rgba(0, 0, 0, 0.28);
         --viewer-btn-bg-hover: rgba(0, 0, 0, 0.06);
       }
+      html.adaptive {
+        color-scheme: light dark;
+      }
+      html.fixed-dark {
+        color-scheme: dark;
+        background: #1e1e1e;
+        --viewer-card-bg: #1e1e1e;
+        --viewer-card-border: rgba(255, 255, 255, 0.12);
+        --viewer-card-shadow: none;
+        --viewer-btn-fg: #f5f5f5;
+        --viewer-btn-border: rgba(255, 255, 255, 0.22);
+        --viewer-btn-border-hover: rgba(255, 255, 255, 0.36);
+        --viewer-btn-bg-hover: rgba(255, 255, 255, 0.10);
+      }
       body {
         font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
         background: #ffffff;
@@ -139,6 +158,10 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
            scrollHeight which includes this padding, so the iframe
            grows to match. */
         padding: 8px;
+      }
+      html.fixed-dark body {
+        background: #1e1e1e;
+        color: #f5f5f5;
       }
 
       #loading {
@@ -259,6 +282,13 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
         width: 100% !important;
         color-scheme: light !important;
         background: #ffffff !important;
+      }
+      html.adaptive #diagram-container .mxgraph {
+        color-scheme: light dark !important;
+      }
+      html.fixed-dark #diagram-container .mxgraph {
+        color-scheme: dark !important;
+        background: #1e1e1e !important;
       }
       #diagram-container .mxgraph > svg,
       #diagram-container .mxgraph svg {
@@ -467,6 +497,7 @@ export function buildHtml(appWithDepsJs, pakoDeflateJs, mermaidJs, options)
     <script>
 ${appWithDepsJs}
 ${normalizeDiagramXml.toString()}
+${normalizeColorModeWithDom.toString()}
 
 // --- XML healing for partial/streaming XML ---
 
@@ -875,28 +906,30 @@ function hashString32(s)
   return ('00000000' + h.toString(16)).slice(-8);
 }
 
-function enforceLightDiagramXml(xml)
+var activeColorMode = "fixed-light";
+var activeSolidFill = false;
+
+function applyViewerColorMode(colorMode, solidFill)
 {
-  if (xml == null || typeof xml !== 'string') return xml;
-  if (typeof mxUtils === 'undefined' || typeof mxUtils.parseXml !== 'function') return xml;
+  activeColorMode = ["adaptive", "fixed-light", "fixed-dark"].indexOf(colorMode) >= 0
+    ? colorMode
+    : "fixed-light";
+  activeSolidFill = solidFill === true;
 
-  try
-  {
-    var doc = mxUtils.parseXml(xml);
-    var models = doc.getElementsByTagName('mxGraphModel');
+  var root = document.documentElement;
+  root.classList.remove("adaptive", "fixed-light", "fixed-dark");
+  root.classList.add(activeColorMode);
+}
 
-    for (var i = 0; i < models.length; i++)
-    {
-      models[i].setAttribute('adaptiveColors', 'none');
-      models[i].setAttribute('background', '#ffffff');
-    }
-
-    return mxUtils.getXml(doc.documentElement);
-  }
-  catch (e)
-  {
-    return xml;
-  }
+function normalizeViewerDiagramXml(xml, colorMode, solidFill)
+{
+  return normalizeColorModeWithDom(
+    xml,
+    colorMode || activeColorMode,
+    solidFill === true,
+    DOMParser,
+    XMLSerializer
+  );
 }
 
 /**
@@ -1359,12 +1392,8 @@ function convertMermaidToXml(mermaidText)
   }
 
   // Always render with the 'default' theme: its palette is expressed in
-  // light-dark() adaptive colors, so a single render is correct in BOTH light
-  // and dark hosts (the viewer/editor color-scheme selects the variant). The
-  // named 'dark' theme is mermaid's STATIC dark palette — forcing it on a dark
-  // host bakes in fixed dark colors that then render wrong if the same diagram
-  // is later opened or exported in light mode. light-dark() is the dark-mode
-  // support; don't override it based on the host's current color-scheme.
+  // Mermaid 先生成带 light-dark() 的默认调色板，随后由统一颜色清洗器
+  // 根据工具参数解析成固定浅色、固定深色或保留自适应颜色。
   var config = { theme: 'default' };
 
   try
@@ -1501,7 +1530,7 @@ function commitDiagramXml(xml)
     }
   }
 
-  out = enforceLightDiagramXml(out);
+  out = normalizeViewerDiagramXml(out, activeColorMode, activeSolidFill);
   currentXml = out;
   drawioEditUrl = generateDrawioEditUrl(out);
 }
@@ -1517,7 +1546,7 @@ function serializeGraphXml(graph)
   {
     var codec = new mxCodec();
     var node = codec.encode(graph.getModel());
-    return enforceLightDiagramXml(mxUtils.getXml(node));
+    return normalizeViewerDiagramXml(mxUtils.getXml(node), activeColorMode, activeSolidFill);
   }
   catch (e)
   {
@@ -4260,7 +4289,8 @@ var lastFinalizedKey = null;
 function finalizeStreamingView(xml, opts)
 {
   opts = opts || {};
-  xml = enforceLightDiagramXml(xml);
+  applyViewerColorMode(opts.colorMode || activeColorMode, opts.solidFill === true);
+  xml = normalizeViewerDiagramXml(xml, activeColorMode, activeSolidFill);
 
   var key = (xml || '') + '|' + (opts.postLayout || '') + '|' + (opts.routing || '') + '|' + (opts.replaceMode ? 'r' : '');
   if (key === lastFinalizedKey)
@@ -5625,8 +5655,7 @@ function handleMermaidPartial(partialMermaid)
   var xml;
   try
   {
-    // 'default' = light-dark() adaptive palette, correct in both light and
-    // dark hosts (see convertMermaidToXml for the rationale).
+    // 保留 Mermaid 的默认调色板，合并到 Graph 前再按当前颜色模式清洗。
     xml = mxMermaidToDrawio.parseText(healed, { theme: 'default' });
   }
   catch (e)
@@ -5647,6 +5676,16 @@ function handleMermaidPartial(partialMermaid)
   // re-parse this text. The finalize call passes the raw partial text
   // (args.mermaid), which usually equals the last streamed partial.
   rememberMermaidConversion(partialMermaid, xml);
+
+  try
+  {
+    xml = normalizeViewerDiagramXml(xml, activeColorMode, activeSolidFill);
+  }
+  catch (e)
+  {
+    if (!streamingInitialized) showMermaidTextPreview(partialMermaid);
+    return;
+  }
 
   // Hand off to the same merge pipeline used by XML streaming.
   try
@@ -5767,8 +5806,16 @@ function handleMermaidPartial(partialMermaid)
 
 app.ontoolinputpartial = function(params)
 {
+  var partialArgs = (params && params.arguments) || {};
+  var partialColorMode = partialArgs.colorMode ||
+    (streamingInitialized ? activeColorMode : "fixed-light");
+  var partialSolidFill = partialArgs.solidFill !== undefined
+    ? partialArgs.solidFill === true
+    : (streamingInitialized ? activeSolidFill : false);
+  applyViewerColorMode(partialColorMode, partialSolidFill);
+
   // Mermaid streaming
-  var partialMermaid = params.arguments && params.arguments.mermaid;
+  var partialMermaid = partialArgs.mermaid;
 
   if (partialMermaid != null && typeof partialMermaid === 'string')
   {
@@ -5785,7 +5832,7 @@ app.ontoolinputpartial = function(params)
     // via lastFinalizedKey in finalizeStreamingView.
     if (!mermaidEarlyFinalizeFired && streamingInitialized)
     {
-      var args = params.arguments;
+      var args = partialArgs;
       var hasSibling = false;
       for (var k in args)
       {
@@ -5805,6 +5852,8 @@ app.ontoolinputpartial = function(params)
           skipIntroAnim: true,
           fadeIn: true,
           postLayout: earlyPostLayout,
+          colorMode: activeColorMode,
+          solidFill: activeSolidFill,
           replaceMode: true,
           isFlowchart: isMermaidFlowchart(partialMermaid),
           isHorizontal: isMermaidHorizontalFlowchart(partialMermaid)
@@ -5826,7 +5875,7 @@ app.ontoolinputpartial = function(params)
   }
 
   // XML streaming path
-  var partialXml = params.arguments && params.arguments.xml;
+  var partialXml = partialArgs.xml;
 
   if (partialXml == null || typeof partialXml !== 'string')
   {
@@ -5836,6 +5885,15 @@ app.ontoolinputpartial = function(params)
   var healedXml = healPartialXml(partialXml);
 
   if (healedXml == null)
+  {
+    return;
+  }
+
+  try
+  {
+    healedXml = normalizeViewerDiagramXml(healedXml, activeColorMode, activeSolidFill);
+  }
+  catch (e)
   {
     return;
   }
@@ -5944,6 +6002,9 @@ app.ontoolinput = function(params)
 {
   var args = (params && params.arguments) || {};
   var mermaidText = args.mermaid;
+  var colorMode = args.colorMode || "fixed-light";
+  var solidFill = args.solidFill === true;
+  applyViewerColorMode(colorMode, solidFill);
 
   // For Mermaid, direction is derived from the flowchart code; for XML, from
   // the optional direction field. resolvePostLayout maps elk to vertical or
@@ -5951,7 +6012,13 @@ app.ontoolinput = function(params)
   var postLayout = resolvePostLayout(args.postLayout, args.direction,
     (typeof mermaidText === 'string') ? mermaidText : null);
 
-  var layoutOpts = { skipIntroAnim: true, fadeIn: true, postLayout: postLayout };
+  var layoutOpts = {
+    skipIntroAnim: true,
+    fadeIn: true,
+    postLayout: postLayout,
+    colorMode: colorMode,
+    solidFill: solidFill
+  };
 
   if (mermaidText != null && typeof mermaidText === 'string')
   {
@@ -6027,6 +6094,8 @@ app.ontoolresult = function(result)
     var postLayout = null;
     var direction = null;
     var routing = null;
+    var colorMode = "fixed-light";
+    var solidFill = false;
 
     try
     {
@@ -6036,6 +6105,8 @@ app.ontoolresult = function(result)
       {
         mermaidText = parsed.mermaid;
         postLayout = parsed.postLayout || null;
+        colorMode = parsed.colorMode || "fixed-light";
+        solidFill = parsed.solidFill === true;
       }
       else if (parsed && typeof parsed.xml === 'string')
       {
@@ -6043,6 +6114,8 @@ app.ontoolresult = function(result)
         postLayout = parsed.postLayout || null;
         direction = parsed.direction || null;
         routing = parsed.routing || null;
+        colorMode = parsed.colorMode || "fixed-light";
+        solidFill = parsed.solidFill === true;
       }
     }
     catch (e)
@@ -6055,7 +6128,15 @@ app.ontoolresult = function(result)
     // routing is "libavoid" (obstacle-avoiding edge routing) or null — XML only.
     routing = (routing === 'libavoid') ? 'libavoid' : null;
 
-    var layoutOpts = { skipIntroAnim: true, fadeIn: true, postLayout: postLayout, routing: routing };
+    applyViewerColorMode(colorMode, solidFill);
+    var layoutOpts = {
+      skipIntroAnim: true,
+      fadeIn: true,
+      postLayout: postLayout,
+      routing: routing,
+      colorMode: colorMode,
+      solidFill: solidFill
+    };
 
     if (mermaidText != null)
     {
@@ -6663,11 +6744,24 @@ export function createServer(html, options = {})
         "---\n\n" +
         "**XML reasoning discipline (applies ONLY when you chose XML — skip this whole section if you're using Mermaid):** Your job in XML is declaring logical structure — nodes, edges, labels, groupings. Follow these steps in order: (1) **Decide `postLayout` and `routing` FIRST, before writing any XML.** If the XML diagram is a flowchart, state diagram, decision tree, or any directional/hierarchical process diagram (which you should rarely be writing as XML — prefer Mermaid), you MUST pass `postLayout: \"elk\"` (add `direction: \"horizontal\"` when the flow is drawn left-to-right; it defaults to vertical). Omit `postLayout` only when the layout carries hand-crafted meaning (swimlanes, containers, architecture, UML) — the typical reason you chose XML in the first place. When `postLayout` is set, your x/y coordinates only need to express rough direction; ELK re-lays out the vertices. For those hand-placed diagrams where you omit `postLayout`, consider `routing: \"libavoid\"` — it leaves your positions untouched and only routes the edges around the boxes in clean right angles (set it whenever connectors would otherwise overlap or cut through shapes). Treat `postLayout` and `routing` as alternatives: ELK already routes its own edges, so if you set `postLayout: \"elk\"` do NOT also set `routing` (redundant); use `routing` only on a hand-placed layout where you are NOT re-laying-out with ELK. (2) Pick ONE concrete scenario on your first impulse and commit — do not pitch alternatives, do not flip-flop between approaches. (3) Use the rigid grid in the XML reference (`x = col*180 + 40`, `y = row*120 + 40`) without computing spacings, canvas dimensions, or overlap checks. (4) Never add `<Array as=\"points\">` waypoints or `exitX/exitY/entryX/entryY` — when postLayout or routing runs it sets them; otherwise drawio's edge router handles it. (5) Do NOT narrate in your reasoning: no \"building the diagram\", no column enumeration, no coordinate math in prose, no coordinate re-verification after placement. Go straight to XML.\n\n" +
         "**User preference override — XML only.** If the user expresses a preference for draw.io XML over Mermaid in any phrasing (examples: \"no mermaid\", \"skip mermaid\", \"use xml\", \"I want drawio format\", \"stop using mermaid\", \"give me the xml\", \"native drawio only\", etc.), from that point onward in the conversation you MUST use the `xml` parameter exclusively and MUST NOT use the `mermaid` parameter, even for diagram types where Mermaid would normally be preferable. This preference persists for the remainder of the conversation unless the user clearly reverses it (e.g. \"mermaid is fine again\"). When the preference is active, translate any diagram request — including flowcharts, sequence diagrams, ER diagrams, etc. — directly to well-formed mxGraphModel XML.\n\n" +
+        "**颜色模式：** 默认使用 `fixed-light`，确保白色画布和图形颜色不随 ChatGPT 主题变化。只有用户明确要求跟随主题时才使用 `adaptive`，明确要求永久深色图表时才使用 `fixed-dark`。用户要求纯色、无渐变或无透明效果时设置 `solidFill: true`。\n\n" +
         "When using XML: IMPORTANT — the XML must be well-formed. Do NOT include ANY XML comments (<!-- -->) in the output.\n\n" +
         xmlReference +
         (mermaidReference ? "\n\n---\n\n" + mermaidReference : ""),
       inputSchema:
       {
+        colorMode: z
+          .enum(["adaptive", "fixed-light", "fixed-dark"])
+          .default(DEFAULT_COLOR_MODE)
+          .describe(
+            "颜色模式。默认 fixed-light，确保 ChatGPT 深色主题下仍使用白色画布和固定颜色。"
+          ),
+        solidFill: z
+          .boolean()
+          .default(false)
+          .describe(
+            "设为 true 时关闭渐变、玻璃和透明效果，同时保留 fillColor=none。"
+          ),
         xml: z
           .string()
           .optional()
@@ -6716,7 +6810,15 @@ export function createServer(html, options = {})
         "openai/toolInvocation/invoked": "Diagram ready.",
       },
     },
-    async function({ xml, mermaid, postLayout, direction, routing })
+    async function({
+      xml,
+      mermaid,
+      colorMode = DEFAULT_COLOR_MODE,
+      solidFill = false,
+      postLayout,
+      direction,
+      routing,
+    })
     {
       var hasXml = (xml != null && typeof xml === "string" && xml.trim().length > 0);
       var hasMermaid = (mermaid != null && typeof mermaid === "string" && mermaid.trim().length > 0);
@@ -6732,7 +6834,11 @@ export function createServer(html, options = {})
       // Mermaid path: return JSON for client-side conversion
       if (hasMermaid)
       {
-        var mermaidPayload = { mermaid: mermaid };
+        var mermaidPayload = {
+          mermaid: mermaid,
+          colorMode: colorMode,
+          solidFill: solidFill,
+        };
         if (postLayout) mermaidPayload.postLayout = postLayout;
         mermaidPayload._buildId = buildId;
         return {
@@ -6752,7 +6858,23 @@ export function createServer(html, options = {})
         };
       }
 
-      var xmlPayload = { xml: normalizedXml };
+      try
+      {
+        normalizedXml = normalizeColorMode(normalizedXml, colorMode, solidFill);
+      }
+      catch (error)
+      {
+        return {
+          content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+          isError: true,
+        };
+      }
+
+      var xmlPayload = {
+        xml: normalizedXml,
+        colorMode: colorMode,
+        solidFill: solidFill,
+      };
       if (postLayout) xmlPayload.postLayout = postLayout;
       // direction + routing are XML-only; Mermaid derives direction from the
       // flowchart code and its layout already routes, so routing is omitted there.

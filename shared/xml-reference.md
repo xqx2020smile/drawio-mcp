@@ -432,14 +432,16 @@ Set `placeholders="1"` on the `<object>` to enable `%propertyName%` substitution
 - Tags, metadata, and placeholders can all be combined on the same `<object>` element
 - Use metadata when shapes represent data records (servers, services, components) and you want to attach structured information beyond the visible label
 
-## 固定浅色模式
+## 颜色模式
 
-本 MCP App 始终以浅色模式渲染图表。生成 XML 时遵守以下规则：
+MCP App 默认使用 `colorMode="fixed-light"`，确保 ChatGPT 深色主题下仍显示白色画布和固定颜色。只有用户明确要求主题自适应或永久深色图表时，才改用其他模式。
 
-- 在 `mxGraphModel` 上设置 `adaptiveColors="none"`，不要使用 `auto`、`simple` 或 `default`。
-- 在 `mxGraphModel` 上设置 `background="#ffffff"`，确保画布为纯白色。
-- 为 `strokeColor`、`fillColor` 和 `fontColor` 使用明确的浅色值，不要使用 `light-dark()`。
-- 不要根据宿主应用或操作系统的深色模式反转颜色。
+- `fixed-light`：白色画布，移除颜色自适应，解析 `light-dark()` 的浅色分支，并为缺失或 `default` 的颜色补齐确定性浅色值。
+- `fixed-dark`：深色画布，移除颜色自适应，解析 `light-dark()` 的深色分支，并补齐确定性深色值。
+- `adaptive`：保留 draw.io 的主题自适应行为。
+- `solidFill=true`：关闭渐变、玻璃和透明效果，但保留显式的 `fillColor=none`。
+
+生成固定浅色 XML 时仍应优先使用明确的十六进制颜色，不要主动生成 `adaptiveColors="auto"` 或 `light-dark()`；服务端清洗器会作为最终保障。
 
 ## Edge routing & layout passes
 

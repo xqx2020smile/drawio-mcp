@@ -2,18 +2,26 @@ import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { createDiagramId, isValidDiagramId } from "./diagram-store.js";
 import { normalizeDiagramXml } from "./normalize-diagram-xml.js";
+import { DEFAULT_COLOR_MODE, normalizeColorMode } from "./normalize-color-mode.js";
 
 const RESOURCE_URI = "ui://drawio/mcp-app.html";
 
 function diagramPayload(entry)
 {
+  const colorMode = entry.colorMode || DEFAULT_COLOR_MODE;
+  const solidFill = entry.solidFill === true;
+  const content = entry.format === "xml"
+    ? normalizeColorMode(entry.content, colorMode, solidFill)
+    : entry.content;
   const payload = entry.format === "mermaid"
-    ? { mermaid: entry.content }
-    : { xml: entry.content };
+    ? { mermaid: content }
+    : { xml: content };
 
   if (entry.postLayout) payload.postLayout = entry.postLayout;
   if (entry.direction) payload.direction = entry.direction;
   if (entry.routing) payload.routing = entry.routing;
+  payload.colorMode = colorMode;
+  payload.solidFill = solidFill;
   payload.diagramId = entry.id;
   payload.name = entry.name || null;
   payload.version = entry.version;
@@ -31,7 +39,7 @@ function displayResult(entry, message)
   };
 }
 
-function normalizeInput(xml, mermaid)
+export function prepareDiagramInput(xml, mermaid, colorMode = DEFAULT_COLOR_MODE, solidFill = false)
 {
   const hasXml = typeof xml === "string" && xml.trim().length > 0;
   const hasMermaid = typeof mermaid === "string" && mermaid.trim().length > 0;
@@ -53,7 +61,10 @@ function normalizeInput(xml, mermaid)
     throw new Error("Could not extract valid draw.io XML from the input.");
   }
 
-  return { format: "xml", content: normalized };
+  return {
+    format: "xml",
+    content: normalizeColorMode(normalized, colorMode, solidFill),
+  };
 }
 
 function errorResult(error)
@@ -75,6 +86,10 @@ export function registerDiagramTools(server, store)
       inputSchema: {
         diagramId: z.string().optional().describe("Optional stable ID. Use letters, numbers, dots, underscores, and hyphens only."),
         name: z.string().max(120).optional().describe("Human-readable diagram name."),
+        colorMode: z.enum(["adaptive", "fixed-light", "fixed-dark"]).default(DEFAULT_COLOR_MODE)
+          .describe("颜色模式。默认 fixed-light，确保 ChatGPT 深色主题下仍为白色画布。"),
+        solidFill: z.boolean().default(false)
+          .describe("是否关闭渐变、玻璃和透明效果。"),
         xml: z.string().optional().describe("Draw.io XML. Mutually exclusive with mermaid."),
         mermaid: z.string().optional().describe("Mermaid source. Mutually exclusive with xml."),
         postLayout: z.enum(["elk"]).optional(),
@@ -97,7 +112,9 @@ export function registerDiagramTools(server, store)
     {
       try
       {
-        const normalized = normalizeInput(args.xml, args.mermaid);
+        const colorMode = args.colorMode || DEFAULT_COLOR_MODE;
+        const solidFill = args.solidFill === true;
+        const normalized = prepareDiagramInput(args.xml, args.mermaid, colorMode, solidFill);
         const id = args.diagramId || createDiagramId();
 
         if (!isValidDiagramId(id))
@@ -109,6 +126,8 @@ export function registerDiagramTools(server, store)
           name: args.name || null,
           format: normalized.format,
           content: normalized.content,
+          colorMode,
+          solidFill,
           postLayout: args.postLayout || null,
           direction: normalized.format === "xml" ? (args.direction || null) : null,
           routing: normalized.format === "xml" ? (args.routing || null) : null,
@@ -146,14 +165,21 @@ export function registerDiagramTools(server, store)
     },
     async function({ diagramId })
     {
-      const entry = await store.get(diagramId);
-
-      if (!entry)
+      try
       {
-        return errorResult(new Error("Diagram not found: " + diagramId));
-      }
+        const entry = await store.get(diagramId);
 
-      return displayResult(entry, "Loaded diagram '" + diagramId + "' version " + entry.version + ".");
+        if (!entry)
+        {
+          return errorResult(new Error("Diagram not found: " + diagramId));
+        }
+
+        return displayResult(entry, "Loaded diagram '" + diagramId + "' version " + entry.version + ".");
+      }
+      catch (error)
+      {
+        return errorResult(error);
+      }
     }
   );
 
@@ -166,6 +192,10 @@ export function registerDiagramTools(server, store)
       inputSchema: {
         diagramId: z.string().describe("Stored diagram ID."),
         name: z.string().max(120).optional(),
+        colorMode: z.enum(["adaptive", "fixed-light", "fixed-dark"]).optional()
+          .describe("新的颜色模式；省略时保留当前设置。"),
+        solidFill: z.boolean().optional()
+          .describe("新的纯色填充设置；省略时保留当前设置。"),
         xml: z.string().optional().describe("Replacement draw.io XML. Mutually exclusive with mermaid."),
         mermaid: z.string().optional().describe("Replacement Mermaid source. Mutually exclusive with xml."),
         postLayout: z.enum(["elk"]).optional(),
@@ -195,11 +225,17 @@ export function registerDiagramTools(server, store)
           throw new Error("Diagram not found: " + args.diagramId);
         }
 
-        const normalized = normalizeInput(args.xml, args.mermaid);
+        const colorMode = args.colorMode || previous.colorMode || DEFAULT_COLOR_MODE;
+        const solidFill = args.solidFill !== undefined
+          ? args.solidFill
+          : previous.solidFill === true;
+        const normalized = prepareDiagramInput(args.xml, args.mermaid, colorMode, solidFill);
         const entry = await store.put(args.diagramId, {
           name: args.name !== undefined ? args.name : previous.name,
           format: normalized.format,
           content: normalized.content,
+          colorMode,
+          solidFill,
           postLayout: args.postLayout || null,
           direction: normalized.format === "xml" ? (args.direction || null) : null,
           routing: normalized.format === "xml" ? (args.routing || null) : null,
